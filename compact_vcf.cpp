@@ -99,6 +99,8 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 		all_missing &= (gt == "./.");
 		*/
 
+		/*
+		// This section is for filtered version.
 		int an = 0, ac = 0;
 
 		if (gt[0] != '.') an++;
@@ -136,6 +138,7 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 		}
 
 		if (qc_dp_fail && qc_gq_fail) var.qc_both++;
+		*/
 	}
 	//return all_missing;
 	return false;
@@ -161,13 +164,13 @@ void PrintVariant(const Variant & var) {
 
 int main (int argc, char** argv) {
 
-	// USAGE: zcat vcf.gz | <PROGRAM> | gzip > output.vcf.gz 2> info.txt
+	// USAGE: zcat vcf.gz | <PROGRAM> | gzip > output.vcf.gz
 
 	std::ios_base::sync_with_stdio(false); // Fastern IO
 	std::cin.tie(NULL); // Fastern IO
 
 	std::string line; // buffer
-	std::cerr << "AC\tAN\tQC_AC\tQC_AN\tDP<10\tGQ<20\tDP_GQ" << std::endl;
+	//std::cerr << "AC\tAN\tQC_AC\tQC_AN\tDP<10\tGQ<20\tDP_GQ" << std::endl; // This is for filtered version.
 	while (std::getline(std::cin, line)) { // Catch a line from stdin
 		if (line[0] == '#') { // for header section, write out directly
 			std::cout << line << std::endl;
@@ -180,8 +183,8 @@ int main (int argc, char** argv) {
 			//var.pass = KeepFlag(var.info); // rephase info; keep only VFLAGS and ABHet
 			ExtractInfo(var, ss);
 			PrintVariant(var); // Output vcf to stdout
-			std::cerr << var.ac << "\t" << var.an << "\t" << var.ac_qc << "\t" 
-			<< var.an_qc << "\t" << var.qc_dp << "\t" << var.qc_gq << "\t" << var.qc_both << std::endl;
+			//std::cerr << var.ac << "\t" << var.an << "\t" << var.ac_qc << "\t" // This is for filtered version.
+			//<< var.an_qc << "\t" << var.qc_dp << "\t" << var.qc_gq << "\t" << var.qc_both << std::endl;
 		}
 	}
 
