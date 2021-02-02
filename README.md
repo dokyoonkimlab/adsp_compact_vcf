@@ -9,11 +9,11 @@ The purpose is to reverse GT (genotype) of each sample for each variant to reduc
 	g++ -O3 -std=c++11 -o compact_filter_vcf compact_filter_vcf.cpp
 
 ## Usage
-* Compact VCF
+Compact VCF
 
 	zcat <VCF> | compact_vcf | gzip > <VCF>.compact.vcf.gz
 
-* Compact VCF and replace low-quality GT by ./.
+Compact VCF and replace low-quality GT by ./.
 The log file is tab-delimited and shows the allele counts and numbers before (ORI) and after (QC) replacing GTs.
 
 	ORI_AC	ORI_AN	ORI_DP	QC_AC	QC_AN	QC_DP	DP<10	GQ<20	DP<10_AND_GQ<20
