@@ -5,13 +5,12 @@ The purpose is to reverse GT (genotype) of each sample for each variant to reduc
 
 	git clone https://bitbucket.org/NIAGADS/compact_vcf.git
 	cd compact_vcf
-	g++ -O3 -std=c++11 -o compact_vcf compact_vcf.cpp
-	g++ -O3 -std=c++11 -o compact_filter_vcf compact_filter_vcf.cpp
+	make
 
 ## Usage
 Compact VCF
 
-	zcat <VCF> | compact_vcf | gzip > <VCF>.compact.vcf.gz
+	zcat <VCF> | bin/compact_vcf | gzip > <VCF>.compact.vcf.gz
 
 Compact VCF and replace low-quality GT by ./.
 The log file is tab-delimited and shows the allele counts and numbers before (ORI) and after (QC) replacing GTs.
@@ -20,5 +19,5 @@ The log file is tab-delimited and shows the allele counts and numbers before (OR
 
 We also updated the allele frequencies, numbers and counts (AF, AN and AC) in the INFO field of VCF while reserved original AF, AN and AC from GATK as ori_AF, ori_AN and ori_AC.
 
-	zcat <VCF> | compact_filter_vcf 2> <VCF>.log | gzip > <VCF>.compact.vcf.gz
+	zcat <VCF> | bin/compact_filter_vcf 2> <VCF>.log | gzip > <VCF>.compact.vcf.gz
 
