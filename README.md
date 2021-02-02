@@ -21,3 +21,5 @@ We also updated the allele frequencies, numbers and counts (AF, AN and AC) in th
 
 	zcat <VCF> | bin/compact_filter_vcf 2> <VCF>.log | gzip > <VCF>.compact.vcf.gz
 
+## License
+The implementation is available for academic and nonprofit use for free [LICENSE](LICENSE).
