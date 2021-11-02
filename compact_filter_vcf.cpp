@@ -31,6 +31,8 @@ struct Variant {
 		dp.clear();
 		gq.clear();
 		pass = false;
+
+		return true;
 	}
 };
 
