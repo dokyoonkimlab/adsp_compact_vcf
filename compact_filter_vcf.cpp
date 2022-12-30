@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <iterator>
+#include <cmath>
 
 struct Variant {
 	// the CHROM, ID, REF, ALT, QUAL, FILTER, INFO, and FORMAT columns in VCF
@@ -10,6 +12,8 @@ struct Variant {
 	int pos, info_ac, info_an, info_dp; // position, AC, AN, and DP in INFO.
 	int qc_fail_dp, qc_fail_gq, qc_fail_both; // DP < 10 and/or GQ <20.
 	int ac_qc, an_qc, dp_qc; // AC and AN after QC.
+	int ad_het_0, ad_het_1; // Store AD counts for heterogeneous SNPs
+	int gt_total, gt_not_miss; // To calculate call rate after filter DP < 10 and GQ < 20
 	std::vector<std::string> gt;
 	std::vector<std::string> dp;
 	std::vector<std::string> gq;
@@ -27,6 +31,8 @@ struct Variant {
 		pos=0, info_ac=0, info_an=0, info_dp=0;
 		qc_fail_dp=0, qc_fail_gq=0, qc_fail_both=0;
 		ac_qc=0, an_qc=0, dp_qc=0;
+		ad_het_0=0, ad_het_1=0;
+		gt_total=0, gt_not_miss=0;
 		gt.clear();
 		dp.clear();
 		gq.clear();
@@ -136,12 +142,13 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 		var.ac_qc += ac;
 		
 		// For AD
-		pos = token.find(':', pos + 1); // AD
+		std::size_t pos_ad = token.find(':', pos + 1); // AD
+		const std::string ad = token.substr(pos + 1, pos_ad - pos - 1).c_str();
 
 		// For DP
-		std::size_t pos1 = token.find((':'), pos + 1); // DP
+		std::size_t pos1 = token.find((':'), pos_ad + 1); // DP
 		//var.dp.push_back(token.substr(pos + 1, pos1 - pos - 1));
-		const int dp = std::atoi(token.substr(pos + 1, pos1 - pos - 1).c_str());
+		const int dp = std::atoi(token.substr(pos_ad + 1, pos1 - pos_ad - 1).c_str());
 		//std::cerr << std::atoi(token.substr(pos + 1, pos1 - pos - 1).c_str()) << std::endl;
 		const bool qc_dp_fail = (dp < 10) ? true : false;
 		if (qc_dp_fail) {
@@ -165,7 +172,22 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 			*(var.gt.rbegin()) = missingGt;
 		}
 
-		if (!qc_dp_fail && !qc_gq_fail) var.dp_qc += dp;
+		if (!qc_dp_fail && !qc_gq_fail) {
+			var.dp_qc += dp;
+			if (gt[2] > '0' && gt[0] == '0') {
+				std::size_t pos = ad.find(',');
+				var.ad_het_0 += std::atoi(ad.substr(0, pos).c_str());
+				var.ad_het_1 += std::atoi(ad.substr(pos + 1).c_str());
+			}
+			else if (gt[0] > '0' && gt[2] == '0') {
+				std::size_t pos = ad.find(',');
+				var.ad_het_1 += std::atoi(ad.substr(0, pos).c_str());
+				var.ad_het_0 += std::atoi(ad.substr(pos + 1).c_str());
+			}
+			if (gt[0] != '.' && gt[2] != '.') var.gt_not_miss++;
+		} 
+		var.gt_total++;
+		
 		if (qc_dp_fail && qc_gq_fail) var.qc_fail_both++;
 	}
 	//return all_missing;
@@ -175,6 +197,25 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 void PrintVariant(const Variant & var) {
 	//if (!var.pass) return;
 	const float af = (var.an_qc == 0) ? 0 : var.ac_qc/var.an_qc;
+	const float abhet = (var.ad_het_0 == 0) ? -1 : round((float(var.ad_het_0) / (var.ad_het_0 + var.ad_het_1) * 10000)) / 10000;
+
+	std::string vflags = "";
+	bool flag_added = 0;
+	if (var.filter != "PASS"){
+		vflags.append("1");
+		flag_added = 1;
+	} 
+	if (var.ac_qc == 0) {
+		flag_added ? vflags.append(",3") : vflags.append("3");
+		flag_added = 1;
+	}
+	//std::cerr << var.pos << " " << var.gt_not_miss << " " <<  var.gt_total << " " << (float(var.gt_not_miss) / var.gt_total) << " " << ((float(var.gt_not_miss) / var.gt_total) <ß 0.8) << std::endl;
+ 	if (var.gt_total > 0 && ((float(var.gt_not_miss) / var.gt_total) < 0.8)) {
+		flag_added ? vflags.append(",4") : vflags.append("4");
+		flag_added = 1;
+	} 
+	if (!flag_added) vflags = "0";
+
 	std::cout << var.chr << "\t"
 		<< var.pos << "\t"
 		<< var.id << "\t"
@@ -183,7 +224,7 @@ void PrintVariant(const Variant & var) {
 		<< var.qual << "\t"
 		<< var.filter << "\t"
 		//<< var.info << "\t"
-		<< "AC=" << var.ac_qc << ";AF=" << af << ";AN=" << var.an_qc << ";DP=" << var.dp_qc << ";" << var.info << "\t"
+		<< "AC=" << var.ac_qc << ";AF=" << af << ";AN=" << var.an_qc << ";DP=" << var.dp_qc << ";" << var.info << ";VFLAG_one_subgroup=" << vflags.c_str() << ";ABHet_one_subgroup=" << ((abhet == -1) ? '.' : abhet) << "\t"
 		<< var.format;
 	// Print GT of each sample
 	for (unsigned int i = 0; i < var.gt.size(); ++i) // The first one GT is empty, so we skip it.
@@ -199,7 +240,7 @@ int main (int argc, char** argv) {
 	std::cin.tie(NULL); // Fastern IO
 
 	std::string line; // buffer
-	std::cerr << "ORI_AC\tORI_AN\tORI_DP\tQC_AC\tQC_AN\tQC_DP\tDP<10\tGQ<20\tDP<10_AND_GQ<20" << std::endl;
+	//std::cerr << "ORI_AC\tORI_AN\tORI_DP\tQC_AC\tQC_AN\tQC_DP\tDP<10\tGQ<20\tDP<10_AND_GQ<20" << std::endl;
 	while (std::getline(std::cin, line)) { // Catch a line from stdin
 		if (line[0] == '#') { // for header section, write out directly
 			std::cout << line << std::endl;
@@ -223,8 +264,8 @@ int main (int argc, char** argv) {
 			//var.pass = KeepFlag(var.info); // rephase info; keep only VFLAGS and ABHet
 			ExtractInfo(var, ss); // Change low-qual genotypes to missing
 			PrintVariant(var); // Output vcf to stdout
-			std::cerr << var.info_ac << "\t" << var.info_an << "\t" << var.info_dp << "\t" << var.ac_qc << "\t" 
-			<< var.an_qc << "\t" << var.dp_qc << "\t" << var.qc_fail_dp << "\t" << var.qc_fail_gq << "\t" << var.qc_fail_both << std::endl;
+			//std::cerr << var.info_ac << "\t" << var.info_an << "\t" << var.info_dp << "\t" << var.ac_qc << "\t" 
+			//<< var.an_qc << "\t" << var.dp_qc << "\t" << var.qc_fail_dp << "\t" << var.qc_fail_gq << "\t" << var.qc_fail_both << std::endl;
 		}
 	}
 
