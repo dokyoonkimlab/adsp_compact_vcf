@@ -6,18 +6,21 @@
 #include <iterator>
 #include <cmath>
 
+const int rm_sample {5202}; // remove sample 5202 (A-ADC-AD005043-BR-NCR-09AD15795) as it is removed from preview to QC version of vcf.
+
 struct Variant {
 	// the CHROM, ID, REF, ALT, QUAL, FILTER, INFO, and FORMAT columns in VCF
 	std::string chr, id, ref, alt, qual, filter, info, format;
 	int pos, info_ac, info_an, info_dp; // position, AC, AN, and DP in INFO.
 	int qc_fail_dp, qc_fail_gq, qc_fail_both; // DP < 10 and/or GQ <20.
 	int ac_qc, an_qc, dp_qc; // AC and AN after QC.
-	int ad_het_0, ad_het_1; // Store AD counts for heterogeneous SNPs
+	int ad_het_0, ad_het_dp; // Store AD counts for heterogeneous SNPs
 	int gt_total, gt_not_miss; // To calculate call rate after filter DP < 10 and GQ < 20
 	std::vector<std::string> gt;
 	std::vector<std::string> dp;
 	std::vector<std::string> gq;
 	bool pass;
+	bool all_fail_dp_gq;
 
 	bool clean() {
 		chr.clear();
@@ -31,12 +34,13 @@ struct Variant {
 		pos=0, info_ac=0, info_an=0, info_dp=0;
 		qc_fail_dp=0, qc_fail_gq=0, qc_fail_both=0;
 		ac_qc=0, an_qc=0, dp_qc=0;
-		ad_het_0=0, ad_het_1=0;
+		ad_het_0=0, ad_het_dp=0;
 		gt_total=0, gt_not_miss=0;
 		gt.clear();
 		dp.clear();
 		gq.clear();
 		pass = false;
+		all_fail_dp_gq = false;
 
 		return true;
 	}
@@ -116,12 +120,16 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 	std::string token;
 	//bool all_missing = true;
 	bool first = true;
+	int sample_index = 0;
+	int all_fail_dp_gq = 0;
 	const std::string missingGt = "./.";
 	while (std::getline(ss, token, '\t')) { // Divid by tab
 		if (first) { // The first one is the empty one.
 			first = false;
 			continue;
 		}
+		sample_index++;
+		if (sample_index == rm_sample) continue; // remove sample
 		//std::cerr << token << std::endl;
 		std::size_t pos = token.find(':'); // GT is the first info in ADSP VCF
 		const std::string gt = token.substr(0, pos); // Extract GT
@@ -156,6 +164,7 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 			var.an_qc -= an;
 			var.ac_qc -= ac;
 			*(var.gt.rbegin()) = missingGt;
+			all_fail_dp_gq++;
 		}
 
 		// For GQ
@@ -170,19 +179,15 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 			var.an_qc -= an;
 			var.ac_qc -= ac;
 			*(var.gt.rbegin()) = missingGt;
+			all_fail_dp_gq ++;
 		}
 
 		if (!qc_dp_fail && !qc_gq_fail) {
 			var.dp_qc += dp;
-			if (gt[2] > '0' && gt[0] == '0') {
+			if (gt[0] != gt[2]) {
 				std::size_t pos = ad.find(',');
 				var.ad_het_0 += std::atoi(ad.substr(0, pos).c_str());
-				var.ad_het_1 += std::atoi(ad.substr(pos + 1).c_str());
-			}
-			else if (gt[0] > '0' && gt[2] == '0') {
-				std::size_t pos = ad.find(',');
-				var.ad_het_1 += std::atoi(ad.substr(0, pos).c_str());
-				var.ad_het_0 += std::atoi(ad.substr(pos + 1).c_str());
+				var.ad_het_dp += dp;
 			}
 			if (gt[0] != '.' && gt[2] != '.') var.gt_not_miss++;
 		} 
@@ -190,6 +195,7 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 		
 		if (qc_dp_fail && qc_gq_fail) var.qc_fail_both++;
 	}
+	if (all_fail_dp_gq == sample_index - 1) var.all_fail_dp_gq = 1;
 	//return all_missing;
 	return false;
 }
@@ -197,24 +203,32 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 void PrintVariant(const Variant & var) {
 	//if (!var.pass) return;
 	const float af = (var.an_qc == 0) ? 0 : var.ac_qc/var.an_qc;
-	const float abhet = (var.ad_het_0 == 0) ? -1 : round((float(var.ad_het_0) / (var.ad_het_0 + var.ad_het_1) * 10000)) / 10000;
+	const float abhet = (var.ad_het_0 == 0) ? -1 : round((float(var.ad_het_0) / var.ad_het_dp * 10000)) / 10000;
+
+	std::ostringstream abhet_ss;
+	if (abhet == -1) abhet_ss << ".";
+	else abhet_ss << abhet;
 
 	std::string vflags = "";
 	bool flag_added = 0;
 	if (var.filter != "PASS"){
 		vflags.append("1");
 		flag_added = 1;
-	} 
-	if (var.ac_qc == 0) {
+	}
+	if (var.all_fail_dp_gq) {
+		flag_added ? vflags.append(",2") : vflags.append("2");
+		flag_added = 1;		
+	}
+	if (var.ac_qc == 0 || var.ac_qc == var.an_qc) {   // account for monomorphic 0/0 or monomorphic 1/1
 		flag_added ? vflags.append(",3") : vflags.append("3");
 		flag_added = 1;
 	}
-	//std::cerr << var.pos << " " << var.gt_not_miss << " " <<  var.gt_total << " " << (float(var.gt_not_miss) / var.gt_total) << " " << ((float(var.gt_not_miss) / var.gt_total) <ß 0.8) << std::endl;
- 	if (var.gt_total > 0 && ((float(var.gt_not_miss) / var.gt_total) < 0.8)) {
+	const float missingness = (float(var.gt_not_miss) / var.gt_total);
+	if (var.gt_total > 0 && missingness - 0.8 < 1e-4) {
 		flag_added ? vflags.append(",4") : vflags.append("4");
 		flag_added = 1;
 	} 
-	if (!flag_added) vflags = "0";
+	if (!flag_added) vflags.append("0");
 
 	std::cout << var.chr << "\t"
 		<< var.pos << "\t"
@@ -224,7 +238,7 @@ void PrintVariant(const Variant & var) {
 		<< var.qual << "\t"
 		<< var.filter << "\t"
 		//<< var.info << "\t"
-		<< "AC=" << var.ac_qc << ";AF=" << af << ";AN=" << var.an_qc << ";DP=" << var.dp_qc << ";" << var.info << ";VFLAG_one_subgroup=" << vflags.c_str() << ";ABHet_one_subgroup=" << ((abhet == -1) ? '.' : abhet) << "\t"
+		<< "AC=" << var.ac_qc << ";AF=" << af << ";AN=" << var.an_qc << ";DP=" << var.dp_qc << ";" << var.info << ";VFLAGS_one_subgroup=" << vflags << ";ABHet_one_subgroup=" << abhet_ss.str() << "\t"
 		<< var.format;
 	// Print GT of each sample
 	for (unsigned int i = 0; i < var.gt.size(); ++i) // The first one GT is empty, so we skip it.
@@ -243,7 +257,24 @@ int main (int argc, char** argv) {
 	//std::cerr << "ORI_AC\tORI_AN\tORI_DP\tQC_AC\tQC_AN\tQC_DP\tDP<10\tGQ<20\tDP<10_AND_GQ<20" << std::endl;
 	while (std::getline(std::cin, line)) { // Catch a line from stdin
 		if (line[0] == '#') { // for header section, write out directly
-			std::cout << line << std::endl;
+			if (line.rfind("#CHROM", 0) == 0) {
+				std::istringstream iss(line);
+				std::string token;
+				int sample_index = -9;
+				bool first = 1;
+				while (std::getline(iss, token, '\t')) {
+					sample_index++;
+					if (sample_index != rm_sample) {
+						if (first) {
+							std::cout << token;
+							first = 0;
+						} else std::cout << '\t' << token;
+					} else std::cerr << "removing sample " << token << std::endl;
+				}
+				std::cout << std::endl;
+			} else {
+				std::cout << line << std::endl;
+			}
 			// Insert new tags in INFO field
 			if (line.find("ID=AC") != std::string::npos || line.find("ID=AN") != std::string::npos
 				|| line.find("ID=AF") != std::string::npos || line.find("ID=DP") != std::string::npos) {
