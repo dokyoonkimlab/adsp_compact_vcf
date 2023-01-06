@@ -200,7 +200,7 @@ bool ExtractInfo (Variant & var, std::stringstream & ss) {
 	return false;
 }
 
-void PrintVariant(const Variant & var) {
+void PrintVariant(const Variant & var, const bool filter_variants) {
 	//if (!var.pass) return;
 	const float af = (var.an_qc == 0) ? 0 : var.ac_qc/var.an_qc;
 	const float abhet = (var.ad_het_0 == 0) ? -1 : round((float(var.ad_het_0) / var.ad_het_dp * 10000)) / 10000;
@@ -224,26 +224,28 @@ void PrintVariant(const Variant & var) {
 		flag_added = 1;
 	}
 	const float missingness = (float(var.gt_not_miss) / var.gt_total);
-	if (var.gt_total > 0 && missingness - 0.8 < 1e-4) {
+	if (var.gt_total > 0 && missingness - 0.8f < 1e-4) {
 		flag_added ? vflags.append(",4") : vflags.append("4");
 		flag_added = 1;
 	} 
 	if (!flag_added) vflags.append("0");
 
-	std::cout << var.chr << "\t"
-		<< var.pos << "\t"
-		<< var.id << "\t"
-		<< var.ref << "\t"
-		<< var.alt << "\t"
-		<< var.qual << "\t"
-		<< var.filter << "\t"
-		//<< var.info << "\t"
-		<< "AC=" << var.ac_qc << ";AF=" << af << ";AN=" << var.an_qc << ";DP=" << var.dp_qc << ";" << var.info << ";VFLAGS_one_subgroup=" << vflags << ";ABHet_one_subgroup=" << abhet_ss.str() << "\t"
-		<< var.format;
-	// Print GT of each sample
-	for (unsigned int i = 0; i < var.gt.size(); ++i) // The first one GT is empty, so we skip it.
-		std::cout << "\t" << var.gt[i];
-	std::cout << std::endl;
+	if (!filter_variants || (filter_variants && !flag_added && abhet > 0.25f && abhet < 0.75f)) {
+		std::cout << var.chr << "\t"
+			<< var.pos << "\t"
+			<< var.id << "\t"
+			<< var.ref << "\t"
+			<< var.alt << "\t"
+			<< var.qual << "\t"
+			<< var.filter << "\t"
+			//<< var.info << "\t"
+			<< "AC=" << var.ac_qc << ";AF=" << af << ";AN=" << var.an_qc << ";DP=" << var.dp_qc << ";" << var.info << ";VFLAGS_one_subgroup=" << vflags << ";ABHet_one_subgroup=" << abhet_ss.str() << "\t"
+			<< var.format;
+		// Print GT of each sample
+		for (unsigned int i = 0; i < var.gt.size(); ++i) // The first one GT is empty, so we skip it.
+			std::cout << "\t" << var.gt[i];
+		std::cout << std::endl;
+	}
 }
 
 int main (int argc, char** argv) {
@@ -294,7 +296,7 @@ int main (int argc, char** argv) {
 			var.format = "GT"; // Only keep GT
 			//var.pass = KeepFlag(var.info); // rephase info; keep only VFLAGS and ABHet
 			ExtractInfo(var, ss); // Change low-qual genotypes to missing
-			PrintVariant(var); // Output vcf to stdout
+			PrintVariant(var, 1); // Output vcf to stdout
 			//std::cerr << var.info_ac << "\t" << var.info_an << "\t" << var.info_dp << "\t" << var.ac_qc << "\t" 
 			//<< var.an_qc << "\t" << var.dp_qc << "\t" << var.qc_fail_dp << "\t" << var.qc_fail_gq << "\t" << var.qc_fail_both << std::endl;
 		}
