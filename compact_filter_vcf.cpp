@@ -224,7 +224,7 @@ void PrintVariant(const Variant & var, const bool filter_variants) {
 		flag_added = 1;
 	}
 	const float missingness = (float(var.gt_not_miss) / var.gt_total);
-	if (var.gt_total > 0 && missingness - 0.8f < 1e-4) {
+	if (var.gt_total > 0 && missingness - 0.8f < 1e-8) {
 		flag_added ? vflags.append(",4") : vflags.append("4");
 		flag_added = 1;
 	} 
@@ -260,6 +260,11 @@ int main (int argc, char** argv) {
 	while (std::getline(std::cin, line)) { // Catch a line from stdin
 		if (line[0] == '#') { // for header section, write out directly
 			if (line.rfind("#CHROM", 0) == 0) {
+
+				//Add header lines for VFLAGS_one_subgroup and ABHet_one_subgroup.
+				std::cout << "##INFO=<ID=VFLAGS_one_subgroup,Number=.,Type=Integer,Description=\"Pipeline-specific QC variant flags\">" << std::endl;
+				std::cout << "##INFO=<ID=ABHet_one_subgroup,Number=1,Type=Float,Description=\"Allelic Read Ratio\">" << std::endl;
+
 				std::istringstream iss(line);
 				std::string token;
 				int sample_index = -9;
